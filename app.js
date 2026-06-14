@@ -93,9 +93,8 @@ function setChip(id, text) {
 const isDark = tg?.colorScheme === 'dark';
 const map = L.map('map', { zoomControl: true, attributionControl: true });
 
-// Positron (light-gray) works in both themes — routes contrast much better than dark tiles
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-  attribution: '© OpenStreetMap © CARTO',
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors',
   maxZoom: 19,
 }).addTo(map);
 
