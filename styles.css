@@ -170,8 +170,13 @@ html, body {
   height: 3px;
   border-radius: 2px;
 }
-.leg-blue   { background: #2481cc; }
-.leg-orange { background: #ff9500; }
+.leg-blue     { background: #2481cc; }
+.leg-orange   { background: #ff9500; }
+.leg-red-dash {
+  background: repeating-linear-gradient(
+    90deg, #ff3b30 0px, #ff3b30 6px, transparent 6px, transparent 10px
+  );
+}
 .leg-dot {
   display: inline-block;
   width: 12px;
