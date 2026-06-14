@@ -5,8 +5,12 @@ if (tg) { tg.ready(); tg.expand(); }
 /* ── Parse URL params ── */
 const p = new URLSearchParams(window.location.search);
 
-const mode      = p.get('mode') || 'single';   // 'single' | 'match'
+const mode      = p.get('mode') || 'single';   // 'single' | 'match' | 'track'
 const role      = p.get('role') || '';          // 'driver' | 'passenger'
+
+// Track-mode params
+const matchId   = p.get('match_id') || '';
+const apiUrl    = decodeURIComponent(p.get('api_url') || '');
 
 // Single-route params (my_trips view)
 const fromLat   = parseFloat(p.get('from_lat')  || '0');
@@ -44,20 +48,17 @@ const routeHeader = document.getElementById('route-header');
 const tripDetails = document.getElementById('trip-details');
 
 if (mode === 'match') {
-  // Show driver route info
   document.getElementById('from-label').textContent =
     (dFromAddr || fromAddr).split(',').slice(0, 2).join(',').trim();
   document.getElementById('to-label').textContent =
     (dToAddr || toAddr).split(',').slice(0, 2).join(',').trim();
 
-  // Build detail chips for match mode
   tripDetails.innerHTML = '';
   if (dTime)   tripDetails.innerHTML += chip('🕒', dTime);
   if (dPrice)  tripDetails.innerHTML += chip('💰', `${dPrice} грн`);
   if (dSeats)  tripDetails.innerHTML += chip('💺', `${dSeats} місць`);
   if (dRating) tripDetails.innerHTML += chip('⭐', dRating);
 
-  // Legend
   const legend = document.createElement('div');
   legend.id = 'legend';
   if (role === 'driver') {
@@ -71,8 +72,22 @@ if (mode === 'match') {
   }
   infoPanel.appendChild(legend);
 
+} else if (mode === 'track') {
+  document.getElementById('from-label').textContent =
+    decodeURIComponent(p.get('d_from_addr') || '').split(',').slice(0, 2).join(',').trim();
+  document.getElementById('to-label').textContent =
+    decodeURIComponent(p.get('d_to_addr') || '').split(',').slice(0, 2).join(',').trim();
+
+  tripDetails.innerHTML = chip('📡', 'Відстеження в реальному часі');
+
+  const legend = document.createElement('div');
+  legend.id = 'legend';
+  legend.innerHTML = `
+    <span class="leg-item"><span class="leg-line leg-blue"></span> Маршрут водія</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#34c759;width:12px;height:12px;border-radius:50%;display:inline-block;border:2px solid white;"></span> Водій зараз</span>`;
+  infoPanel.appendChild(legend);
+
 } else {
-  // Single mode
   document.getElementById('from-label').textContent = fromAddr.split(',').slice(0, 2).join(',').trim();
   document.getElementById('to-label').textContent   = toAddr.split(',').slice(0, 2).join(',').trim();
   if (time)  setChip('detail-time',  time);
@@ -153,6 +168,8 @@ function straightLine(lat1, lon1, lat2, lon2) {
 async function render() {
   if (mode === 'match') {
     await renderMatch();
+  } else if (mode === 'track') {
+    await renderTrack();
   } else {
     await renderSingle();
   }
@@ -239,6 +256,71 @@ async function renderMatch() {
   if (pFromLat) latLngs.push([pFromLat, pFromLon]);
   if (pToLat)   latLngs.push([pToLat, pToLon]);
   map.fitBounds(latLngs, { padding: [70, 70] });
+}
+
+/* ── Track mode (real-time driver location) ── */
+async function renderTrack() {
+  const tDFromLat = parseFloat(p.get('d_from_lat') || '0');
+  const tDFromLon = parseFloat(p.get('d_from_lon') || '0');
+  const tDToLat   = parseFloat(p.get('d_to_lat')   || '0');
+  const tDToLon   = parseFloat(p.get('d_to_lon')   || '0');
+
+  if (!tDFromLat || !tDToLat) { map.setView([49.0, 31.5], 6); return; }
+
+  // Draw driver's planned route (blue dashed)
+  try {
+    const r = await fetchRoute([[tDFromLon, tDFromLat], [tDToLon, tDToLat]]);
+    drawPolyline(r.geojson, '#ffffff', 9, false).addTo(map);
+    drawPolyline(r.geojson, BLUE, 5, true).addTo(map);
+    map.fitBounds(L.geoJSON(r.geojson).getBounds(), { padding: [70, 70] });
+  } catch {
+    L.polyline([[tDFromLat, tDFromLon], [tDToLat, tDToLon]],
+      { color: BLUE, weight: 4, dashArray: '8 6' }).addTo(map);
+    map.fitBounds([[tDFromLat, tDFromLon], [tDToLat, tDToLon]], { padding: [70, 70] });
+  }
+
+  // Destination pin
+  L.marker([tDToLat, tDToLon], { icon: pinIcon(RED) })
+    .addTo(map).bindPopup('<b>🏁 Пункт призначення</b>');
+
+  // Live driver marker (green, pulsing)
+  let driverMarker = null;
+
+  function pulsingIcon() {
+    return L.divIcon({
+      className: '',
+      html: `<div style="
+        width:20px;height:20px;border-radius:50%;
+        background:#34c759;border:3px solid white;
+        box-shadow:0 0 0 4px rgba(52,199,89,0.35);
+        animation:pulse 1.4s ease-in-out infinite;
+      "></div>
+      <style>@keyframes pulse{0%,100%{box-shadow:0 0 0 4px rgba(52,199,89,0.35)}50%{box-shadow:0 0 0 10px rgba(52,199,89,0.1)}}</style>`,
+      iconSize: [20, 20], iconAnchor: [10, 10],
+    });
+  }
+
+  async function pollDriverLocation() {
+    if (!apiUrl || !matchId) return;
+    try {
+      const resp = await fetch(`${apiUrl}/${matchId}`, { signal: AbortSignal.timeout(5000) });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const { lat, lon } = data;
+      if (!lat || !lon) return;
+
+      if (driverMarker) {
+        driverMarker.setLatLng([lat, lon]);
+      } else {
+        driverMarker = L.marker([lat, lon], { icon: pulsingIcon(), zIndexOffset: 1000 })
+          .addTo(map).bindPopup('<b>🚗 Водій зараз тут</b>');
+      }
+      showBadge(`🚗 Водій в дорозі · оновлено щойно`);
+    } catch { /* network error — keep last known position */ }
+  }
+
+  await pollDriverLocation();
+  setInterval(pollDriverLocation, 4000);
 }
 
 /* ── Helpers ── */
