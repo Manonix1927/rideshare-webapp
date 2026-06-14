@@ -211,21 +211,26 @@ async function renderMatch() {
 
   const allBounds = [];
 
-  // Route 1: Driver direct (blue dashed)
+  // Fetch routes first, then draw in correct z-order (orange below, blue on top)
   try {
     const r1 = await fetchRoute([[dFromLon, dFromLat], [dToLon, dToLat]]);
-    drawPolyline(r1.geojson, BLUE, 4, true).addTo(map);
     allBounds.push(...L.geoJSON(r1.geojson).getBounds().toBBoxString().split(',').map(Number));
 
     if (role === 'driver' && pFromLat && pFromLon) {
-      // Route 2: Detour via passenger pickup (orange solid)
+      // Route 2: Detour via passenger (orange solid) — draw FIRST so blue renders on top
       try {
         const waypoints = [[dFromLon, dFromLat], [pFromLon, pFromLat]];
         if (pToLat && pToLon) waypoints.push([pToLon, pToLat]);
         waypoints.push([dToLon, dToLat]);
 
         const r2 = await fetchRoute(waypoints);
-        drawPolyline(r2.geojson, ORANGE, 5, false).addTo(map);
+
+        // Orange detour (bottom layer)
+        drawPolyline(r2.geojson, ORANGE, 6, false).addTo(map);
+
+        // Blue direct — white casing + dashed blue on top so it's always visible
+        drawPolyline(r1.geojson, '#ffffff', 9, false).addTo(map);
+        drawPolyline(r1.geojson, BLUE, 5, true).addTo(map);
 
         const extra = r2.durMin - r1.durMin;
         showBadge(`🚗 ${r1.distKm} км · ⏱ ${r1.durMin} хв · +${extra > 0 ? extra : 0} хв з попутником`);
@@ -235,22 +240,24 @@ async function renderMatch() {
         if (pFromLat) pts.push([pFromLat, pFromLon]);
         if (pToLat)   pts.push([pToLat,   pToLon]);
         pts.push([dToLat, dToLon]);
-        L.polyline(pts, { color: ORANGE, weight: 4, dashArray: '10 5' }).addTo(map);
+        L.polyline(pts, { color: ORANGE, weight: 5, dashArray: '10 5' }).addTo(map);
+        drawPolyline(r1.geojson, '#ffffff', 9, false).addTo(map);
+        drawPolyline(r1.geojson, BLUE, 5, true).addTo(map);
         showBadge(`📏 Маршрут водія: ~${r1.distKm} км`);
       }
     } else {
-      // Passenger view: just driver route + mark pickup
+      // Passenger view: just driver route
+      drawPolyline(r1.geojson, BLUE, 5, false).addTo(map);
       showBadge(`🚗 Маршрут водія: ${r1.distKm} км · ⏱ ~${r1.durMin} хв`);
     }
   } catch {
     // Full fallback
-    const pts = [[dFromLat, dFromLon]];
-    if (pFromLat) pts.push([pFromLat, pFromLon]);
-    pts.push([dToLat, dToLon]);
-    L.polyline([[dFromLat, dFromLon], [dToLat, dToLon]], { color: BLUE, weight: 3, dashArray: '8 6' }).addTo(map);
+    L.polyline([[dFromLat, dFromLon], [dToLat, dToLon]], { color: ORANGE, weight: 5 }).addTo(map);
     if (pFromLat) {
       L.polyline([[dFromLat, dFromLon], [pFromLat, pFromLon], [dToLat, dToLon]],
-        { color: ORANGE, weight: 3, dashArray: '6 4' }).addTo(map);
+        { color: '#ffffff', weight: 9 }).addTo(map);
+      L.polyline([[dFromLat, dFromLon], [pFromLat, pFromLon], [dToLat, dToLon]],
+        { color: BLUE, weight: 5, dashArray: '8 6' }).addTo(map);
     }
     showBadge(`📏 ~${straightLine(dFromLat, dFromLon, dToLat, dToLon)} км (пряма)`);
   }
