@@ -320,31 +320,12 @@ async function renderTrack() {
     });
   }
 
-  function staticDot(color) {
-    return L.divIcon({
-      className: '',
-      html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>`,
-      iconSize: [16, 16], iconAnchor: [8, 8],
-    });
-  }
+  let otherMarker = null;
 
-  // ── Markers ────────────────────────────────────────────────────────────────
-  let myMarker    = null;   // own position (static dot — I know where I am)
-  let otherMarker = null;   // other person (pulsing live icon)
-
-  // ── 1. watchPosition — send own GPS every update ───────────────────────────
+  // ── 1. watchPosition — silently send own GPS to API ───────────────────────
   if (myRole && navigator.geolocation) {
-    const myColor = myRole === 'driver' ? BLUE : ORANGE;
-    const myLabel = myRole === 'driver' ? '<b>🚗 Ви (водій)</b>' : '<b>🙋 Ви (пасажир)</b>';
-
     navigator.geolocation.watchPosition(
       ({ coords: { latitude: lat, longitude: lon } }) => {
-        if (myMarker) {
-          myMarker.setLatLng([lat, lon]);
-        } else {
-          myMarker = L.marker([lat, lon], { icon: staticDot(myColor), zIndexOffset: 900 })
-            .addTo(map).bindPopup(myLabel);
-        }
         if (apiUrl && matchId) {
           fetch(`${apiUrl}/${matchId}`, {
             method: 'POST',
