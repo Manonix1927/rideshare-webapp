@@ -320,12 +320,30 @@ async function renderTrack() {
     });
   }
 
+  let myMarker    = null;
   let otherMarker = null;
 
-  // ── 1. watchPosition — silently send own GPS to API ───────────────────────
+  function selfIcon(role) {
+    const color = role === 'driver' ? BLUE : ORANGE;
+    return L.divIcon({
+      className: '',
+      html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4)"></div>`,
+      iconSize: [16, 16], iconAnchor: [8, 8],
+    });
+  }
+
+  // ── 1. watchPosition — show own dot + send GPS to API ─────────────────────
   if (myRole && navigator.geolocation) {
+    const myLabel = myRole === 'driver' ? '<b>🚗 Ви (водій)</b>' : '<b>🙋 Ви (пасажир)</b>';
+
     navigator.geolocation.watchPosition(
       ({ coords: { latitude: lat, longitude: lon } }) => {
+        if (myMarker) {
+          myMarker.setLatLng([lat, lon]);
+        } else {
+          myMarker = L.marker([lat, lon], { icon: selfIcon(myRole), zIndexOffset: 900 })
+            .addTo(map).bindPopup(myLabel);
+        }
         if (apiUrl && matchId) {
           fetch(`${apiUrl}/${matchId}`, {
             method: 'POST',
