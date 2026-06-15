@@ -78,13 +78,27 @@ if (mode === 'match') {
   document.getElementById('to-label').textContent =
     decodeURIComponent(p.get('d_to_addr') || '').split(',').slice(0, 2).join(',').trim();
 
-  tripDetails.innerHTML = chip('📡', 'Відстеження в реальному часі');
+  const _trkDriverId    = parseInt(p.get('driver_user_id')    || '0');
+  const _trkPassengerId = parseInt(p.get('passenger_user_id') || '0');
+  const _myId           = tg?.initDataUnsafe?.user?.id || 0;
+  const _myRole = _myId && _trkDriverId && _trkPassengerId
+    ? (_myId === _trkDriverId ? 'driver' : _myId === _trkPassengerId ? 'passenger' : null)
+    : null;
+
+  if (_myRole === 'driver') {
+    tripDetails.innerHTML = chip('📡', 'GPS передається пасажиру');
+  } else if (_myRole === 'passenger') {
+    tripDetails.innerHTML = chip('📡', 'Водій в дорозі');
+  } else {
+    tripDetails.innerHTML = chip('📡', 'Відстеження в реальному часі');
+  }
 
   const legend = document.createElement('div');
   legend.id = 'legend';
   legend.innerHTML = `
     <span class="leg-item"><span class="leg-line leg-blue"></span> Маршрут водія</span>
-    <span class="leg-item"><span class="leg-dot" style="background:#34c759;width:12px;height:12px;border-radius:50%;display:inline-block;border:2px solid white;"></span> Водій зараз</span>`;
+    <span class="leg-item"><span class="leg-dot" style="background:#34c759;width:12px;height:12px;border-radius:50%;display:inline-block;border:2px solid white;"></span> Водій</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#ff9500;width:12px;height:12px;border-radius:50%;display:inline-block;border:2px solid white;"></span> Пасажир</span>`;
   infoPanel.appendChild(legend);
 
 } else {
@@ -258,20 +272,28 @@ async function renderMatch() {
   map.fitBounds(latLngs, { padding: [70, 70] });
 }
 
-/* ── Track mode (real-time driver location) ── */
+/* ── Track mode (real-time two-way GPS via Mini App) ── */
 async function renderTrack() {
   const tDFromLat = parseFloat(p.get('d_from_lat') || '0');
   const tDFromLon = parseFloat(p.get('d_from_lon') || '0');
   const tDToLat   = parseFloat(p.get('d_to_lat')   || '0');
   const tDToLon   = parseFloat(p.get('d_to_lon')   || '0');
 
+  const driverUserId    = parseInt(p.get('driver_user_id')    || '0');
+  const passengerUserId = parseInt(p.get('passenger_user_id') || '0');
+  const myUserId        = tg?.initDataUnsafe?.user?.id || 0;
+  const myRole = myUserId && driverUserId && passengerUserId
+    ? (myUserId === driverUserId ? 'driver' : myUserId === passengerUserId ? 'passenger' : null)
+    : null;
+  const otherRole = myRole === 'driver' ? 'passenger' : myRole === 'passenger' ? 'driver' : null;
+
   if (!tDFromLat || !tDToLat) { map.setView([49.0, 31.5], 6); return; }
 
-  // Draw driver's planned route (blue dashed)
+  // Draw driver's planned route
   try {
     const r = await fetchRoute([[tDFromLon, tDFromLat], [tDToLon, tDToLat]]);
     drawPolyline(r.geojson, '#ffffff', 9, false).addTo(map);
-    drawPolyline(r.geojson, BLUE, 5, true).addTo(map);
+    drawPolyline(r.geojson, BLUE, 5, false).addTo(map);
     map.fitBounds(L.geoJSON(r.geojson).getBounds(), { padding: [70, 70] });
   } catch {
     L.polyline([[tDFromLat, tDFromLon], [tDToLat, tDToLon]],
@@ -279,48 +301,101 @@ async function renderTrack() {
     map.fitBounds([[tDFromLat, tDFromLon], [tDToLat, tDToLon]], { padding: [70, 70] });
   }
 
-  // Destination pin
   L.marker([tDToLat, tDToLon], { icon: pinIcon(RED) })
     .addTo(map).bindPopup('<b>🏁 Пункт призначення</b>');
 
-  // Live driver marker (green, pulsing)
-  let driverMarker = null;
+  // ── Icon helpers ───────────────────────────────────────────────────────────
 
-  function pulsingIcon() {
+  function liveIcon(color, label) {
     return L.divIcon({
       className: '',
       html: `<div style="
         width:20px;height:20px;border-radius:50%;
-        background:#34c759;border:3px solid white;
-        box-shadow:0 0 0 4px rgba(52,199,89,0.35);
-        animation:pulse 1.4s ease-in-out infinite;
+        background:${color};border:3px solid white;
+        box-shadow:0 0 0 5px ${color}44;
+        animation:trk-pulse 1.4s ease-in-out infinite;
       "></div>
-      <style>@keyframes pulse{0%,100%{box-shadow:0 0 0 4px rgba(52,199,89,0.35)}50%{box-shadow:0 0 0 10px rgba(52,199,89,0.1)}}</style>`,
+      <style>@keyframes trk-pulse{0%,100%{box-shadow:0 0 0 5px ${color}44}50%{box-shadow:0 0 0 12px ${color}11}}</style>`,
       iconSize: [20, 20], iconAnchor: [10, 10],
     });
   }
 
-  async function pollDriverLocation() {
+  function staticDot(color) {
+    return L.divIcon({
+      className: '',
+      html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>`,
+      iconSize: [16, 16], iconAnchor: [8, 8],
+    });
+  }
+
+  // ── Markers ────────────────────────────────────────────────────────────────
+  let myMarker    = null;   // own position (static dot — I know where I am)
+  let otherMarker = null;   // other person (pulsing live icon)
+
+  // ── 1. watchPosition — send own GPS every update ───────────────────────────
+  if (myRole && navigator.geolocation) {
+    const myColor = myRole === 'driver' ? BLUE : ORANGE;
+    const myLabel = myRole === 'driver' ? '<b>🚗 Ви (водій)</b>' : '<b>🙋 Ви (пасажир)</b>';
+
+    navigator.geolocation.watchPosition(
+      ({ coords: { latitude: lat, longitude: lon } }) => {
+        if (myMarker) {
+          myMarker.setLatLng([lat, lon]);
+        } else {
+          myMarker = L.marker([lat, lon], { icon: staticDot(myColor), zIndexOffset: 900 })
+            .addTo(map).bindPopup(myLabel);
+        }
+        if (apiUrl && matchId) {
+          fetch(`${apiUrl}/${matchId}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Telegram-Init-Data': tg?.initData || '',
+            },
+            body: JSON.stringify({ lat, lon }),
+          }).catch(() => {});
+        }
+      },
+      (err) => console.warn('geolocation error', err),
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 },
+    );
+  }
+
+  // ── 2. Poll API — show other person's position ─────────────────────────────
+  async function pollOther() {
     if (!apiUrl || !matchId) return;
     try {
       const resp = await fetch(`${apiUrl}/${matchId}`, { signal: AbortSignal.timeout(5000) });
       if (!resp.ok) return;
       const data = await resp.json();
-      const { lat, lon } = data;
-      if (!lat || !lon) return;
 
-      if (driverMarker) {
-        driverMarker.setLatLng([lat, lon]);
+      // Prefer the other person; fall back to driver for view-only mode
+      const lookFor = otherRole || 'driver';
+      const loc = data[lookFor];
+      if (!loc || !loc.lat) return;
+
+      const otherColor = lookFor === 'driver' ? GREEN : ORANGE;
+      const otherLabel = lookFor === 'driver' ? '<b>🚗 Водій зараз тут</b>' : '<b>🙋 Пасажир зараз тут</b>';
+
+      if (otherMarker) {
+        otherMarker.setLatLng([loc.lat, loc.lon]);
       } else {
-        driverMarker = L.marker([lat, lon], { icon: pulsingIcon(), zIndexOffset: 1000 })
-          .addTo(map).bindPopup('<b>🚗 Водій зараз тут</b>');
+        otherMarker = L.marker([loc.lat, loc.lon], { icon: liveIcon(otherColor), zIndexOffset: 1000 })
+          .addTo(map).bindPopup(otherLabel);
       }
-      showBadge(`🚗 Водій в дорозі · оновлено щойно`);
-    } catch { /* network error — keep last known position */ }
+
+      const ageMs = loc.updated_at
+        ? Date.now() - new Date(loc.updated_at.endsWith('Z') ? loc.updated_at : loc.updated_at + 'Z')
+        : null;
+      const ageStr = ageMs !== null
+        ? (ageMs < 60000 ? `${Math.round(ageMs / 1000)}с тому` : `${Math.round(ageMs / 60000)}хв тому`)
+        : '';
+      showBadge(`📡 Оновлено ${ageStr}`);
+    } catch { /* keep last position */ }
   }
 
-  await pollDriverLocation();
-  setInterval(pollDriverLocation, 4000);
+  await pollOther();
+  setInterval(pollOther, 4000);
 }
 
 /* ── Helpers ── */
