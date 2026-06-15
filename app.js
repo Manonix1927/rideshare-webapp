@@ -289,9 +289,19 @@ async function renderTrack() {
 
   if (!tDFromLat || !tDToLat) { map.setView([49.0, 31.5], 6); return; }
 
-  // Draw driver's planned route
+  const tPFromLat = parseFloat(p.get('p_from_lat') || '0');
+  const tPFromLon = parseFloat(p.get('p_from_lon') || '0');
+  const tPToLat   = parseFloat(p.get('p_to_lat')   || '0');
+  const tPToLon   = parseFloat(p.get('p_to_lon')   || '0');
+
+  // Draw route: driver start → passenger pickup → passenger dropoff → driver end
+  const waypoints = [[tDFromLon, tDFromLat]];
+  if (tPFromLat && tPFromLon) waypoints.push([tPFromLon, tPFromLat]);
+  if (tPToLat   && tPToLon)   waypoints.push([tPToLon,   tPToLat]);
+  waypoints.push([tDToLon, tDToLat]);
+
   try {
-    const r = await fetchRoute([[tDFromLon, tDFromLat], [tDToLon, tDToLat]]);
+    const r = await fetchRoute(waypoints);
     drawPolyline(r.geojson, '#ffffff', 9, false).addTo(map);
     drawPolyline(r.geojson, BLUE, 5, false).addTo(map);
     map.fitBounds(L.geoJSON(r.geojson).getBounds(), { padding: [70, 70] });
@@ -301,8 +311,21 @@ async function renderTrack() {
     map.fitBounds([[tDFromLat, tDFromLon], [tDToLat, tDToLon]], { padding: [70, 70] });
   }
 
+  // Passenger pickup/dropoff markers
+  if (tPFromLat && tPFromLon) {
+    L.marker([tPFromLat, tPFromLon], { icon: circleIcon(ORANGE) })
+      .addTo(map).bindPopup('<b>🙋 Посадка пасажира</b>');
+  }
+  if (tPToLat && tPToLon) {
+    L.marker([tPToLat, tPToLon], { icon: circleIcon(RED) })
+      .addTo(map).bindPopup('<b>🏁 Висадка пасажира</b>');
+  }
+
+  // Driver start/end markers
+  L.marker([tDFromLat, tDFromLon], { icon: pinIcon(GREEN) })
+    .addTo(map).bindPopup('<b>🚗 Старт водія</b>');
   L.marker([tDToLat, tDToLon], { icon: pinIcon(RED) })
-    .addTo(map).bindPopup('<b>🏁 Пункт призначення</b>');
+    .addTo(map).bindPopup('<b>🏁 Кінцева зупинка</b>');
 
   // ── Icon helpers ───────────────────────────────────────────────────────────
 
