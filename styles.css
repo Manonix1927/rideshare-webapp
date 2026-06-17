@@ -187,6 +187,71 @@ html, body {
 }
 .leg-orange-dot { background: #ff9500; }
 
+/* ── Pick mode (location picker) ── */
+body.pick-mode #info-panel { display: none; }
+
+#pick-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+body.pick-mode #pick-overlay { display: block; }
+
+#pick-address-pill {
+  position: absolute;
+  top: calc(50% - 72px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 20, 20, 0.82);
+  color: #fff;
+  padding: 7px 16px;
+  border-radius: 18px;
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 82vw;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+#pick-pin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* tip of pin (bottom of SVG) sits at map center */
+  transform: translate(-50%, -100%);
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+body.pick-dragging #pick-pin {
+  transform: translate(-50%, -115%);
+  filter: drop-shadow(0 8px 10px rgba(0,0,0,0.4));
+}
+
+#pick-shadow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 7px;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 50%;
+  filter: blur(3px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+body.pick-dragging #pick-shadow {
+  opacity: 0.1;
+  transform: translate(-50%, -50%) scale(1.6);
+}
+
 /* Loading state */
 #loading-overlay {
   position: absolute;

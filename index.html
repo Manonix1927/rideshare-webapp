@@ -49,6 +49,20 @@
     <div id="distance-badge" style="display:none">
       <span id="distance-text"></span>
     </div>
+
+    <!-- Pick-mode overlay (map location picker) -->
+    <div id="pick-overlay">
+      <div id="pick-address-pill">Визначення адреси…</div>
+      <div id="pick-pin">
+        <svg width="36" height="48" viewBox="0 0 36 48" xmlns="http://www.w3.org/2000/svg">
+          <path d="M18 0C8.06 0 0 8.06 0 18c0 12.44 18 30 18 30S36 30.44 36 18C36 8.06 27.94 0 18 0z"
+                fill="#2481cc" stroke="white" stroke-width="2.5"/>
+          <circle cx="18" cy="18" r="8" fill="white"/>
+          <circle cx="18" cy="18" r="4" fill="#2481cc"/>
+        </svg>
+      </div>
+      <div id="pick-shadow"></div>
+    </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

@@ -440,4 +440,85 @@ function showBadge(text) {
   badge.style.display = 'block';
 }
 
-render();
+/* ── Pick mode (drag-to-select location) ── */
+let _currentPickAddress = '';
+let _pickGeocodeTimer   = null;
+
+function _schedulePickGeocode(lat, lon) {
+  clearTimeout(_pickGeocodeTimer);
+  _pickGeocodeTimer = setTimeout(() => _updatePickAddress(lat, lon), 600);
+}
+
+async function _updatePickAddress(lat, lon) {
+  const pill = document.getElementById('pick-address-pill');
+  if (!pill) return;
+  pill.textContent = 'Визначення адреси…';
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=uk`;
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'RideShareBot/1.0' },
+      signal: AbortSignal.timeout(6000),
+    });
+    const data = await resp.json();
+    const a = data.address || {};
+    const street   = [a.road || a.pedestrian || a.footway, a.house_number].filter(Boolean).join(' ');
+    const locality = a.city || a.town || a.village || a.county || '';
+    const formatted = [street, locality].filter(Boolean).join(', ') || data.display_name || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    _currentPickAddress = formatted;
+    pill.textContent = formatted;
+  } catch {
+    _currentPickAddress = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    if (pill) pill.textContent = _currentPickAddress;
+  }
+}
+
+async function renderPick() {
+  document.body.classList.add('pick-mode');
+
+  // Default: Kyiv center
+  const defaultLat = 50.4501, defaultLon = 30.5234;
+  map.setView([defaultLat, defaultLon], 13);
+  _updatePickAddress(defaultLat, defaultLon);
+
+  // Try to snap to user location
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      ({ coords: { latitude: lat, longitude: lon } }) => {
+        map.setView([lat, lon], 15);
+        _updatePickAddress(lat, lon);
+      },
+      () => { /* keep default */ },
+      { timeout: 5000, maximumAge: 30000 },
+    );
+  }
+
+  // Telegram MainButton
+  if (tg?.MainButton) {
+    tg.MainButton.setText('✅ Підтвердити місце');
+    tg.MainButton.show();
+    tg.MainButton.onClick(() => {
+      const c = map.getCenter();
+      tg.sendData(JSON.stringify({
+        lat: parseFloat(c.lat.toFixed(7)),
+        lon: parseFloat(c.lng.toFixed(7)),
+        address: _currentPickAddress,
+      }));
+      tg.close();
+    });
+  }
+
+  // Animate pin on drag
+  map.on('movestart', () => document.body.classList.add('pick-dragging'));
+  map.on('moveend', () => {
+    document.body.classList.remove('pick-dragging');
+    const c = map.getCenter();
+    _schedulePickGeocode(c.lat, c.lng);
+  });
+}
+
+// Entry point
+if (mode === 'pick') {
+  renderPick();
+} else {
+  render();
+}
