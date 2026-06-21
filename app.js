@@ -463,12 +463,12 @@ async function _updatePickAddress(lat, lon) {
     const a = data.address || {};
     const street   = [a.road || a.pedestrian || a.footway, a.house_number].filter(Boolean).join(' ');
     const locality = a.city || a.town || a.village || a.county || '';
-    const formatted = [street, locality].filter(Boolean).join(', ') || data.display_name || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    const formatted = [street, locality].filter(Boolean).join(', ') || data.display_name || '';
     _currentPickAddress = formatted;
-    pill.textContent = formatted;
+    pill.textContent = formatted || 'Адреса не визначена';
   } catch {
-    _currentPickAddress = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-    if (pill) pill.textContent = _currentPickAddress;
+    _currentPickAddress = '';
+    if (pill) pill.textContent = 'Адреса не визначена';
   }
 }
 
