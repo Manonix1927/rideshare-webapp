@@ -453,22 +453,33 @@ async function _updatePickAddress(lat, lon) {
   const pill = document.getElementById('pick-address-pill');
   if (!pill) return;
   pill.textContent = 'Визначення адреси…';
-  try {
-    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=uk`;
-    const resp = await fetch(url, {
-      headers: { 'User-Agent': 'RideShareBot/1.0' },
-      signal: AbortSignal.timeout(6000),
-    });
-    const data = await resp.json();
+
+  const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=uk`;
+  let data = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 7000);
+      const resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!resp.ok) break;
+      data = await resp.json();
+      break;
+    } catch {
+      if (attempt === 0) await new Promise(r => setTimeout(r, 800));
+    }
+  }
+
+  if (data) {
     const a = data.address || {};
-    const street   = [a.road || a.pedestrian || a.footway, a.house_number].filter(Boolean).join(' ');
+    const street   = [a.road || a.pedestrian || a.footway || a.path, a.house_number].filter(Boolean).join(', ');
     const locality = a.city || a.town || a.village || a.county || '';
     const formatted = [street, locality].filter(Boolean).join(', ') || data.display_name || '';
     _currentPickAddress = formatted;
     pill.textContent = formatted || 'Адреса не визначена';
-  } catch {
+  } else {
     _currentPickAddress = '';
-    if (pill) pill.textContent = 'Адреса не визначена';
+    pill.textContent = 'Не вдалося визначити адресу';
   }
 }
 
