@@ -486,13 +486,20 @@ async function _updatePickAddress(lat, lon) {
 async function renderPick() {
   document.body.classList.add('pick-mode');
 
-  // Default: Kyiv center
-  const defaultLat = 50.4501, defaultLon = 30.5234;
-  map.setView([defaultLat, defaultLon], 13);
-  _updatePickAddress(defaultLat, defaultLon);
+  // Pre-position: if ?lat=&lon= given (from address confirmation), use them; else Kyiv center
+  const presetLat = parseFloat(p.get('lat') || '0');
+  const presetLon = parseFloat(p.get('lon') || '0');
+  const hasPreset = presetLat !== 0 && presetLon !== 0;
 
-  // Try to snap to user location
-  if (navigator.geolocation) {
+  const initLat = hasPreset ? presetLat : 50.4501;
+  const initLon = hasPreset ? presetLon : 30.5234;
+  const initZoom = hasPreset ? 17 : 13;
+
+  map.setView([initLat, initLon], initZoom);
+  _updatePickAddress(initLat, initLon);
+
+  // Try to snap to user location only if no preset coords given
+  if (!hasPreset && navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       ({ coords: { latitude: lat, longitude: lon } }) => {
         map.setView([lat, lon], 15);
